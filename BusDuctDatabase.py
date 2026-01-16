@@ -59,7 +59,7 @@ def clean_one_file(path: Path) -> pd.DataFrame:
     # Drop rows missing key fields
     df = df.dropna(subset=["ROMP", "SAP"])
 
-    # 🔥 NEW: remove fully duplicated rows
+    # NEW: remove fully duplicated rows
     df = df.drop_duplicates()
 
     return df[required]
@@ -116,6 +116,3 @@ if search_clicked:
     else:
         for _, r in matches.iterrows():
             render_card(r)
-
-        with st.expander("Table view"):
-            st.dataframe(matches, use_container_width=True, hide_index=True)
