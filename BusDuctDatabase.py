@@ -112,7 +112,7 @@ if search_clicked:
 
     st.subheader("Results")
     if matches.empty:
-        st.info(f"No matches for ROMP {romp} + SAP {sap_val}.")
+        st.info(f"No matches for ROMP {romp} + SAP {sap_val}. ROMP {romp} may not be uploaded.")
     else:
         for _, r in matches.iterrows():
             render_card(r)
