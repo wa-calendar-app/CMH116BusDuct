@@ -87,26 +87,23 @@ def render_card(row: pd.Series):
         unsafe_allow_html=True,
     )
 
-st.set_page_config(page_title="ROMP Shipment Lookup", layout="centered")
-st.title("ROMP Shipment Lookup")
+st.set_page_config(page_title="CMH116 BusDuct Lookup", layout="centered")
+st.title("CMH116 BusDuct Lookup")
 
 db = build_database(DATA_DIR)
 
-with st.expander("Database status"):
-    st.write(f"Files found: **{len(list(DATA_DIR.glob('*.xlsx')))}**")
-    st.write(f"Rows in database (after cleaning): **{len(db)}**")
-
 romp = st.selectbox("Select ROMP", ROMP_OPTIONS)
-sap_text = st.text_input("Enter SAP (number)", placeholder="e.g., 10 or 170")
+sap_text = st.text_input("Enter SAP", placeholder="e.g., 10 or 170")
 
-sap_val = None
-if sap_text.strip():
+search_clicked = st.button("Search")
+
+if search_clicked:
     try:
         sap_val = int(sap_text.strip())
     except ValueError:
         st.error("SAP must be a number.")
+        st.stop()
 
-if sap_val is not None:
     matches = db[(db["ROMP"] == romp) & (db["SAP"] == sap_val)]
 
     st.subheader("Results")
