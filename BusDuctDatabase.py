@@ -50,16 +50,20 @@ def clean_one_file(path: Path) -> pd.DataFrame:
     # delete row if Shipped Qty OR Ship Date is blank
     df = df[~df["Shipped Qty"].apply(is_blank) & ~df["Ship Date"].apply(is_blank)].copy()
 
-    # Normalize ROMP to 01-12 style
+        # Normalize ROMP
     df["ROMP"] = df["ROMP"].apply(normalize_romp)
 
-    # Normalize SAP to an int so lookup is consistent across files
+    # Normalize SAP
     df["SAP"] = df["SAP"].apply(normalize_sap_to_int).astype("Int64")
 
-    # Optional: drop rows that became invalid after normalization
+    # Drop rows missing key fields
     df = df.dropna(subset=["ROMP", "SAP"])
 
+    # 🔥 NEW: remove fully duplicated rows
+    df = df.drop_duplicates()
+
     return df[required]
+
 
 @st.cache_data(show_spinner=False)
 def build_database(data_dir: Path) -> pd.DataFrame:
