@@ -1,13 +1,11 @@
 import re
 from pathlib import Path
+from datetime import date
 
 import pandas as pd
 import streamlit as st
 
-# For local testing, point to a folder of excel files.
-# On Streamlit Cloud later, you’ll likely use a repo folder like Path("data")
 DATA_DIR = Path("data")
-
 ROMP_OPTIONS = [f"{i:02d}" for i in range(1, 13)]
 
 def is_blank(x) -> bool:
@@ -32,7 +30,6 @@ def normalize_sap_to_int(val):
     if re.fullmatch(r"\d+\.0", s):
         s = s[:-2]
 
-    # numeric coercion; '000010' -> 10, '40' -> 40
     num = pd.to_numeric(s, errors="coerce")
     if pd.isna(num):
         return pd.NA
@@ -46,24 +43,25 @@ def clean_one_file(path: Path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"{path.name} is missing columns: {missing}")
 
-    # CLEANING RULE:
     # delete row if Shipped Qty OR Ship Date is blank
     df = df[~df["Shipped Qty"].apply(is_blank) & ~df["Ship Date"].apply(is_blank)].copy()
 
-        # Normalize ROMP
+    # Normalize ROMP
     df["ROMP"] = df["ROMP"].apply(normalize_romp)
 
     # Normalize SAP
     df["SAP"] = df["SAP"].apply(normalize_sap_to_int).astype("Int64")
 
-    # Drop rows missing key fields
-    df = df.dropna(subset=["ROMP", "SAP"])
+    # Normalize Ship Date to a date (so searching works reliably)
+    df["Ship Date"] = pd.to_datetime(df["Ship Date"], errors="coerce").dt.date
 
-    # NEW: remove fully duplicated rows
+    # Drop rows missing key fields after normalization
+    df = df.dropna(subset=["ROMP", "SAP", "Ship Date"])
+
+    # remove fully duplicated rows (within file)
     df = df.drop_duplicates()
 
     return df[required]
-
 
 @st.cache_data(show_spinner=False)
 def build_database(data_dir: Path) -> pd.DataFrame:
@@ -72,10 +70,14 @@ def build_database(data_dir: Path) -> pd.DataFrame:
         return pd.DataFrame(columns=["SAP", "ROMP", "Catalog", "Shipped Qty", "Ship Date", "Carrier"])
 
     frames = [clean_one_file(p) for p in files]
-    return pd.concat(frames, ignore_index=True)
+    db = pd.concat(frames, ignore_index=True)
+
+    # remove fully duplicated rows across ALL files
+    db = db.drop_duplicates().reset_index(drop=True)
+
+    return db
 
 def render_card(row: pd.Series):
-    # Mobile-friendly vertical card display
     st.markdown(
         f"""
         <div style="padding: 12px; border: 1px solid rgba(0,0,0,0.15); border-radius: 12px; margin-bottom: 10px;">
@@ -91,28 +93,76 @@ def render_card(row: pd.Series):
         unsafe_allow_html=True,
     )
 
+def show_results(matches: pd.DataFrame, label: str):
+    st.subheader("Results")
+    if matches.empty:
+        st.info(f"No matches for {label}.")
+    else:
+        for _, r in matches.iterrows():
+            render_card(r)
+
 st.set_page_config(page_title="CMH116 BusDuct Lookup", layout="centered")
 st.title("CMH116 BusDuct Lookup")
 
 db = build_database(DATA_DIR)
 
-romp = st.selectbox("Select ROMP", ROMP_OPTIONS)
-sap_text = st.text_input("Enter SAP", placeholder="e.g., 10 or 170")
+# --- Search mode selector (tabs) ---
+tab_sap, tab_carrier, tab_date = st.tabs(["ROMP + SAP", "ROMP + Carrier", "ROMP + Ship Date"])
 
-search_clicked = st.button("Search")
+with tab_sap:
+    romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_sap")
+    sap_text = st.text_input("Enter SAP", placeholder="e.g., 10 or 170", key="sap_input")
+    search_clicked = st.button("Search", type="primary", key="btn_sap")
 
-if search_clicked:
-    try:
-        sap_val = int(sap_text.strip())
-    except ValueError:
-        st.error("SAP must be a number.")
-        st.stop()
+    if search_clicked:
+        try:
+            sap_val = int(sap_text.strip())
+        except ValueError:
+            st.error("SAP must be a number.")
+            st.stop()
 
-    matches = db[(db["ROMP"] == romp) & (db["SAP"] == sap_val)]
+        matches = db[(db["ROMP"] == romp) & (db["SAP"] == sap_val)]
+        show_results(matches, f"ROMP {romp} + SAP {sap_val}")
 
-    st.subheader("Results")
-    if matches.empty:
-        st.info(f"No matches for ROMP {romp} + SAP {sap_val}. ROMP {romp} may not be uploaded.")
+with tab_carrier:
+    romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_carrier")
+
+    # Carriers limited to selected ROMP for cleaner dropdown
+    carriers = (
+        db.loc[db["ROMP"] == romp, "Carrier"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .unique()
+    )
+    carriers = sorted([c for c in carriers if c])
+
+    carrier = st.selectbox("Select Carrier", ["(Select)"] + carriers, key="carrier_select")
+    search_clicked = st.button("Search", type="primary", key="btn_carrier")
+
+    if search_clicked:
+        if carrier == "(Select)":
+            st.error("Please select a carrier.")
+            st.stop()
+
+        carrier_norm = carrier.strip()
+        matches = db[(db["ROMP"] == romp) & (db["Carrier"].astype(str).str.strip() == carrier_norm)]
+        show_results(matches, f"ROMP {romp} + Carrier {carrier_norm}")
+
+with tab_date:
+    romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_date")
+
+    # Set date picker bounds based on available dates for this ROMP
+    dates = db.loc[db["ROMP"] == romp, "Ship Date"].dropna()
+    if dates.empty:
+        st.info("No ship dates available for this ROMP.")
     else:
-        for _, r in matches.iterrows():
-            render_card(r)
+        min_d = dates.min()
+        max_d = dates.max()
+
+        ship_date = st.date_input("Select Ship Date", value=max_d, min_value=min_d, max_value=max_d, key="ship_date")
+        search_clicked = st.button("Search", type="primary", key="btn_date")
+
+        if search_clicked:
+            matches = db[(db["ROMP"] == romp) & (db["Ship Date"] == ship_date)]
+            show_results(matches, f"ROMP {romp} + Ship Date {ship_date}")
