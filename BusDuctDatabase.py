@@ -95,16 +95,33 @@ def render_card(row: pd.Series):
 
 def show_results(matches: pd.DataFrame, label: str):
     st.subheader("Results")
+
     if matches.empty:
         st.info(f"No matches for {label}.")
+        return
+
+    # Apply global sort
+    if sort_mode == "SAP (smallest → largest)":
+        matches = matches.sort_values(["SAP", "Ship Date", "Catalog"], ascending=[True, True, True], na_position="last")
     else:
-        for _, r in matches.iterrows():
-            render_card(r)
+        # Ship Date (oldest -> newest)
+        matches = matches.sort_values(["Ship Date", "SAP", "Catalog"], ascending=[True, True, True], na_position="last")
+
+    for _, r in matches.iterrows():
+        render_card(r)
+
 
 st.set_page_config(page_title="CMH116 BusDuct Lookup", layout="centered")
 st.title("CMH116 BusDuct Lookup")
 
 db = build_database(DATA_DIR)
+
+sort_mode = st.radio(
+    "Sort results",
+    ["Ship Date (oldest → newest)", "SAP (smallest → largest)"],
+    horizontal=True,
+    index=0,
+)
 
 # --- Search mode selector (tabs) ---
 tab_romp,tab_sap, tab_carrier, tab_date = st.tabs(
@@ -179,8 +196,5 @@ with tab_romp:
 
     if search_clicked:
         matches = db[db["ROMP"] == romp]
-
-        # Optional: sort by Ship Date (nice when showing all)
-        matches = matches.sort_values(["Ship Date", "SAP", "Catalog"], na_position="last")
 
         show_results(matches, f"ROMP {romp} (all shipped rows)")
