@@ -108,7 +108,7 @@ db = build_database(DATA_DIR)
 
 # --- Search mode selector (tabs) ---
 tab_sap, tab_carrier, tab_date, tab_romp = st.tabs(
-    ["Search by SAP", "Search by Carrier", "Search by Date", "Entire ROMP"]
+    ["Search by SAP", "Search by Carrier", "Search by Ship Date", "Entire ROMP"]
 )
 
 with tab_sap:
