@@ -107,7 +107,9 @@ st.title("CMH116 BusDuct Lookup")
 db = build_database(DATA_DIR)
 
 # --- Search mode selector (tabs) ---
-tab_sap, tab_carrier, tab_date = st.tabs(["ROMP + SAP", "ROMP + Carrier", "ROMP + Ship Date"])
+tab_sap, tab_carrier, tab_date, tab_romp = st.tabs(
+    ["Search by SAP", "Search by Carrier", "Search by Date", "Entire ROMP"]
+)
 
 with tab_sap:
     romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_sap")
@@ -127,7 +129,6 @@ with tab_sap:
 with tab_carrier:
     romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_carrier")
 
-    # Carriers limited to selected ROMP for cleaner dropdown
     carriers = (
         db.loc[db["ROMP"] == romp, "Carrier"]
         .dropna()
@@ -152,7 +153,6 @@ with tab_carrier:
 with tab_date:
     romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_date")
 
-    # Set date picker bounds based on available dates for this ROMP
     dates = db.loc[db["ROMP"] == romp, "Ship Date"].dropna()
     if dates.empty:
         st.info("No ship dates available for this ROMP.")
@@ -160,9 +160,27 @@ with tab_date:
         min_d = dates.min()
         max_d = dates.max()
 
-        ship_date = st.date_input("Select Ship Date", value=max_d, min_value=min_d, max_value=max_d, key="ship_date")
+        ship_date = st.date_input(
+            "Select Ship Date",
+            value=max_d,
+            min_value=min_d,
+            max_value=max_d,
+            key="ship_date",
+        )
         search_clicked = st.button("Search", type="primary", key="btn_date")
 
         if search_clicked:
             matches = db[(db["ROMP"] == romp) & (db["Ship Date"] == ship_date)]
             show_results(matches, f"ROMP {romp} + Ship Date {ship_date}")
+
+with tab_romp:
+    romp = st.selectbox("Select ROMP", ROMP_OPTIONS, key="romp_all")
+    search_clicked = st.button("Search", type="primary", key="btn_romp_all")
+
+    if search_clicked:
+        matches = db[db["ROMP"] == romp]
+
+        # Optional: sort by Ship Date (nice when showing all)
+        matches = matches.sort_values(["Ship Date", "SAP", "Catalog"], na_position="last")
+
+        show_results(matches, f"ROMP {romp} (all shipped rows)")
